@@ -343,16 +343,13 @@ with tab1:
 
         # Insight: qué aportaron las notas a la predicción
         if resultados_cursos:
-            t2_texto = f"· Promedio T2 real: <b>{promedio_t2_real}/20</b>" if notas_t2_list else ""
-            st.markdown(f"""
-            <div class="insight-box">
-                📌 <b>Variables de notas usadas en el modelo:</b><br>
-                Promedio T1 real: <b>{promedio_t1_real}/20</b>
-                {t2_texto}
-                · Cursos con riesgo de jale: <b>{cursos_en_riesgo}/{len(resultados_cursos)}</b>
-                · % créditos en riesgo: <b>{pct_creditos_riesgo*100:.0f}%</b>
-            </div>
-            """, unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown('📌 **Variables de notas usadas en el modelo:**')
+                ic1, ic2, ic3, ic4 = st.columns(4)
+                ic1.metric('Promedio T1', f"{promedio_t1_real}/20")
+                ic2.metric('Promedio T2', f"{promedio_t2_real}/20")
+                ic3.metric('Cursos en riesgo', f"{cursos_en_riesgo}/{len(resultados_cursos)}")
+                ic4.metric('% créditos en riesgo', f"{pct_creditos_riesgo*100:.0f}%")
 
         # Recomendaciones generales
         st.markdown('**📋 Recomendaciones generales:**')
