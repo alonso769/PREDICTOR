@@ -2,19 +2,19 @@
 Sistema Predictivo de Situación Académica
 Universidad Privada del Norte - Modalidad para Gente que Trabaja
 """
- 
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
 import json
 import os
- 
+
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, 'models', 'modelo_upn.pkl')
 META_PATH  = os.path.join(BASE_DIR, 'models', 'modelo_meta.json')
 DATA_PATH  = os.path.join(BASE_DIR, 'data',   'estudiantes_upn.csv')
- 
+
 LABEL_ES = {
     'APROBADO_REGULAR':   '✅ Aprobado Regular',
     'EN_RIESGO':          '⚠️ En Riesgo',
@@ -53,10 +53,10 @@ RECOMENDACIONES = {
         'Contacta a Servicios Estudiantiles para apoyo psicológico y financiero.',
     ],
 }
- 
+
 st.set_page_config(page_title='Predictor Académico UPN', page_icon='🎓',
                    layout='wide', initial_sidebar_state='expanded')
- 
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -86,8 +86,8 @@ h1{color:#003366!important;}
 .sidebar-title{color:#003366;font-weight:700;font-size:1.1rem;}
 </style>
 """, unsafe_allow_html=True)
- 
- 
+
+
 @st.cache_resource(show_spinner=False)
 def cargar_modelo():
     if not os.path.exists(MODEL_PATH):
@@ -98,17 +98,17 @@ def cargar_modelo():
         with open(META_PATH, encoding='utf-8') as f:
             meta = json.load(f)
     return modelo, meta
- 
- 
+
+
 # ── HEADER ────────────────────────────────────────────────────────────
 _, col_title = st.columns([1, 5])
 with col_title:
     st.title('🎓 Predictor de Situación Académica')
     st.markdown('**Universidad Privada del Norte** · Modalidad para Gente que Trabaja')
 st.divider()
- 
+
 modelo, meta = cargar_modelo()
- 
+
 with st.sidebar:
     st.markdown('<p class="sidebar-title">📊 Estado del Modelo</p>', unsafe_allow_html=True)
     if modelo is None:
@@ -128,7 +128,7 @@ with st.sidebar:
         st.info(f"{len(pd.read_csv(DATA_PATH))} casos registrados")
     else:
         st.warning('Sin dataset aún.')
- 
+
 import sys
 sys.path.insert(0, BASE_DIR)
 from predictor_notas import (
@@ -137,11 +137,11 @@ from predictor_notas import (
     SITUACION_SEMESTRE_ES, SITUACION_SEMESTRE_COLOR,
     RECOMENDACIONES_CURSO,
 )
- 
+
 tab1, tab2, tab3, tab4 = st.tabs([
     '🔮 Predictor', '➕ Agregar Caso', '📊 Estadísticas', '⚙️ Entrenar Modelo'
 ])
- 
+
 # ══════════════════════════════════════════════════════════════════════
 # TAB 1 — PREDICTOR UNIFICADO
 # ══════════════════════════════════════════════════════════════════════
@@ -149,12 +149,12 @@ with tab1:
     if modelo is None:
         st.warning('Primero entrena el modelo en **⚙️ Entrenar Modelo**.')
         st.stop()
- 
+
     st.caption('Completa los datos del estudiante y las notas de tus cursos. Al presionar **Analizar**, el modelo combinará todo para darte una predicción única e integrada.')
- 
+
     # ── BLOQUE 1: DATOS GENERALES ──────────────────────────────────────
     st.markdown('<div class="bloque-titulo">📋 Datos generales del estudiante</div>', unsafe_allow_html=True)
- 
+
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown('**📚 Académico**')
@@ -182,18 +182,18 @@ with tab1:
         apoyo_familiar    = st.slider('Apoyo familiar (1-5)',         1,   5,  3,          key='apo')
         deuda_pension     = st.selectbox('Meses de deuda en pensión', [0,1,2,3],
                             format_func=lambda x: f'{x} mes(es)' if x else 'Al día', key='deu')
- 
+
     st.divider()
- 
+
     # ── BLOQUE 2: CURSOS Y NOTAS ───────────────────────────────────────
     st.markdown('<div class="bloque-titulo">📚 Notas de tus cursos — T1 / T2</div>', unsafe_allow_html=True)
- 
+
     ciclos_disp = sorted({info['ciclo'] for info in CURSOS_UPN.values()})
     try:
         idx_default = ciclos_disp.index(semestre) + 1
     except ValueError:
         idx_default = 0
- 
+
     ciclo_sel = st.selectbox(
         'Filtra cursos por ciclo:',
         ['Todos'] + [f'Ciclo {c}' for c in ciclos_disp],
@@ -204,14 +204,14 @@ with tab1:
     else:
         cn = int(ciclo_sel.replace('Ciclo ',''))
         lista_nombres = [n for n, info in CURSOS_UPN.items() if info['ciclo'] == cn]
- 
+
     cursos_sel = st.multiselect(
         'Selecciona tus cursos de este ciclo:',
         lista_nombres,
         default=lista_nombres[:4] if len(lista_nombres) >= 4 else lista_nombres,
         key='cursos_sel'
     )
- 
+
     notas_cursos = {}
     if cursos_sel:
         for i, nombre in enumerate(cursos_sel):
@@ -237,12 +237,12 @@ with tab1:
                 notas_cursos[nombre] = {'t1': t1, 't2': t2, 'entiende': entiende}
     else:
         st.info('Selecciona al menos un curso para ingresar sus notas.')
- 
+
     st.divider()
- 
+
     # ── BOTÓN ÚNICO ────────────────────────────────────────────────────
     analizar = st.button('🔮 Analizar situación académica completa', use_container_width=True)
- 
+
     if analizar:
         # ── PASO 1: Calcular resultados por curso con predictor_notas ─
         resultados_cursos = []
@@ -258,17 +258,17 @@ with tab1:
                 semestre_actual = semestre,
             )
             resultados_cursos.append(res)
- 
+
         # ── PASO 2: Calcular las 4 features de notas reales ───────────
         if resultados_cursos:
             notas_t1_list = [r['nota_t1'] for r in resultados_cursos]
             notas_t2_list = [r['nota_t2'] for r in resultados_cursos if r['nota_t2'] is not None]
             proy_list     = [r['proyeccion_nota_final'] for r in resultados_cursos]
             creds_list    = [CURSOS_UPN[r['curso']]['creditos'] for r in resultados_cursos]
- 
+
             promedio_t1_real = round(float(np.mean(notas_t1_list)), 2)
             promedio_t2_real = round(float(np.mean(notas_t2_list)), 2) if notas_t2_list else promedio_t1_real
- 
+
             cursos_en_riesgo = sum(
                 1 for r in resultados_cursos
                 if r['situacion_curso'] in ('PROBABLE_JALE','MATEMATICAMENTE_IMPOSIBLE')
@@ -279,7 +279,7 @@ with tab1:
                 if r['situacion_curso'] in ('PROBABLE_JALE','MATEMATICAMENTE_IMPOSIBLE')
             )
             pct_creditos_riesgo = round(creditos_en_riesgo / total_creditos, 2) if total_creditos > 0 else 0.0
- 
+
             resumen_sem = predecir_semestre(resultados_cursos)
         else:
             # Sin cursos seleccionados: valores neutros basados en promedio histórico
@@ -288,7 +288,7 @@ with tab1:
             cursos_en_riesgo     = 0
             pct_creditos_riesgo  = 0.0
             resumen_sem          = None
- 
+
         # ── PASO 3: Input al modelo con TODAS las features ────────────
         # Ahora el modelo recibe directamente promedio_t1, promedio_t2,
         # cursos_en_riesgo_notas y pct_creditos_riesgo como features reales
@@ -315,24 +315,24 @@ with tab1:
             'cursos_en_riesgo_notas':    cursos_en_riesgo,
             'pct_creditos_riesgo':       pct_creditos_riesgo,
         }])
- 
+
         prediccion = modelo.predict(input_ml)[0]
         probas     = modelo.predict_proba(input_ml)[0]
         clases     = modelo.classes_
- 
+
         # ══════════════════════════════════════════════════════════════
         # RESULTADO ÚNICO INTEGRADO
         # ══════════════════════════════════════════════════════════════
         st.markdown('---')
         st.markdown('## 📊 Resultado integrado')
- 
+
         # Caja principal
         st.markdown(f"""
         <div class="resultado-principal" style="background:{LABEL_COLOR[prediccion]};">
             {LABEL_ES[prediccion]}
         </div>
         """, unsafe_allow_html=True)
- 
+
         # Probabilidades por escenario
         st.markdown('**Probabilidad por escenario:**')
         pcols = st.columns(4)
@@ -340,24 +340,25 @@ with tab1:
             if clase in clases:
                 idx = list(clases).index(clase)
                 pcols[i].metric(LABEL_ES[clase].split(' ',1)[1], f"{probas[idx]:.1%}")
- 
+
         # Insight: qué aportaron las notas a la predicción
         if resultados_cursos:
+            t2_texto = f"· Promedio T2 real: <b>{promedio_t2_real}/20</b>" if notas_t2_list else ""
             st.markdown(f"""
             <div class="insight-box">
-                📌 <b>Variables de notas usadas en el modelo:</b>
+                📌 <b>Variables de notas usadas en el modelo:</b><br>
                 Promedio T1 real: <b>{promedio_t1_real}/20</b>
-                {'· Promedio T2 real: <b>' + str(promedio_t2_real) + '/20</b>' if notas_t2_list else ''}
+                {t2_texto}
                 · Cursos con riesgo de jale: <b>{cursos_en_riesgo}/{len(resultados_cursos)}</b>
                 · % créditos en riesgo: <b>{pct_creditos_riesgo*100:.0f}%</b>
             </div>
             """, unsafe_allow_html=True)
- 
+
         # Recomendaciones generales
         st.markdown('**📋 Recomendaciones generales:**')
         for rec in RECOMENDACIONES[prediccion]:
             st.markdown(f'- {rec}')
- 
+
         # Situación global del semestre
         if resumen_sem:
             st.divider()
@@ -366,14 +367,14 @@ with tab1:
             etiq_sem  = SITUACION_SEMESTRE_ES[resumen_sem['situacion_semestre']]
             st.markdown(f'<div class="semestre-box" style="background:{color_sem};">{etiq_sem}</div>',
                         unsafe_allow_html=True)
- 
+
             ms1, ms2, ms3, ms4 = st.columns(4)
             ms1.metric('✅ Probables aprobar', resumen_sem['probables_aprobacion'])
             ms2.metric('⚠️ En juego',          resumen_sem['en_juego'])
             ms3.metric('🚨 Probables jalar',   resumen_sem['probables_jale'])
             ms4.metric('⚡ Créditos en riesgo',
                        f"{resumen_sem['creditos_en_riesgo']}/{resumen_sem['creditos_totales']}")
- 
+
         # Detalle por curso
         if resultados_cursos:
             st.divider()
@@ -403,7 +404,7 @@ with tab1:
                             st.success('Ya tienes la nota asegurada.')
                     for rec in RECOMENDACIONES_CURSO[res['situacion_curso']]:
                         st.markdown(f'- {rec}')
- 
+
             df_res = pd.DataFrame([{
                 'Curso':       r['curso'],
                 'Código':      r.get('codigo_banner','—'),
@@ -414,15 +415,15 @@ with tab1:
                 'Situación':   SITUACION_CURSO_ES[r['situacion_curso']],
             } for r in resultados_cursos])
             st.dataframe(df_res, use_container_width=True, hide_index=True)
- 
- 
+
+
 # ══════════════════════════════════════════════════════════════════════
 # TAB 2 — AGREGAR CASO
 # ══════════════════════════════════════════════════════════════════════
 with tab2:
     st.subheader('➕ Agregar caso real al dataset de entrenamiento')
     st.info('Agrega estudiantes reales para mejorar la precisión del modelo.')
- 
+
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown('**📚 Académico**')
@@ -449,7 +450,7 @@ with tab2:
                         format_func=lambda x: 'Sí' if x else 'No', key='n_int')
         n_apoyo      = st.slider('Apoyo familiar (1-5)', 1, 5, 3, key='n_apo')
         n_deuda      = st.selectbox('Meses deuda pensión', [0,1,2,3], key='n_deu')
- 
+
     st.markdown('**📝 Notas del ciclo actual**')
     na1, na2, na3, na4 = st.columns(4)
     with na1:
@@ -460,13 +461,13 @@ with tab2:
         n_cursos_riesgo = st.slider('Cursos con riesgo de jale', 0, 6, 0, key='n_crisk')
     with na4:
         n_pct_riesgo = st.slider('% créditos en riesgo', 0.0, 1.0, 0.0, 0.05, key='n_pctrisk')
- 
+
     n_situacion = st.selectbox(
         '📌 Situación académica real del estudiante',
         ['APROBADO_REGULAR','EN_RIESGO','RIESGO_ALTO','DESERCION_PROBABLE'],
         format_func=lambda x: LABEL_ES[x]
     )
- 
+
     if st.button('💾 Guardar caso al dataset', use_container_width=True):
         nuevo = {
             'semestre': n_semestre, 'cursos_matriculados': n_cursos,
@@ -487,8 +488,8 @@ with tab2:
         df_final = pd.concat([df_exist, pd.DataFrame([nuevo])], ignore_index=True)
         df_final.to_csv(DATA_PATH, index=False)
         st.success(f'✅ Caso guardado. Total: {len(df_final)} registros.')
- 
- 
+
+
 # ══════════════════════════════════════════════════════════════════════
 # TAB 3 — ESTADÍSTICAS
 # ══════════════════════════════════════════════════════════════════════
@@ -512,7 +513,7 @@ with tab3:
             st.plotly_chart(fig, use_container_width=True)
         except ImportError:
             st.dataframe(dist)
- 
+
         cols_resumen = ['promedio_ponderado','asistencia_pct','horas_trabajo_semanal']
         for col in ['promedio_t1','promedio_t2']:
             if col in df.columns:
@@ -524,15 +525,15 @@ with tab3:
         st.download_button('⬇️ Descargar dataset',
                            df.to_csv(index=False).encode('utf-8'),
                            'estudiantes_upn.csv','text/csv')
- 
- 
+
+
 # ══════════════════════════════════════════════════════════════════════
 # TAB 4 — ENTRENAR MODELO
 # ══════════════════════════════════════════════════════════════════════
 with tab4:
     st.subheader('⚙️ Entrenamiento del modelo predictivo')
     st.info('⚠️ Si actualizaste el sistema, genera un dataset nuevo y re-entrena para que el modelo incluya las features de notas T1/T2.')
- 
+
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown('**Paso 1: Generar / actualizar dataset**')
@@ -555,7 +556,7 @@ with tab4:
                     df_final = df_gen
                 df_final.to_csv(DATA_PATH, index=False)
             st.success(f'✅ Dataset actualizado: {len(df_final)} registros totales.')
- 
+
     with col_b:
         st.markdown('**Paso 2: Entrenar el modelo**')
         st.caption('Random Forest con features de notas T1/T2 integradas.')
@@ -572,7 +573,7 @@ with tab4:
                 st.metric('F1-weighted',   f"{meta_result['f1_weighted']:.1%}")
                 st.metric('CV-5 Accuracy', f"{meta_result['cv_accuracy_mean']:.1%} ± {meta_result['cv_accuracy_std']:.1%}")
                 st.info('Recarga la página (F5) para activar el modelo nuevo.')
- 
+
     st.divider()
     st.markdown("""
     **📖 Flujo para activar el sistema integrado:**
