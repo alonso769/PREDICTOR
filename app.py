@@ -1,580 +1,641 @@
+# -*- coding: utf-8 -*-
 """
-Sistema Predictivo de Situación Académica
-Universidad Privada del Norte - Modalidad para Gente que Trabaja
+app.py
+-------
+Dashboard interactivo (Streamlit) del Sistema Predictivo de Rendimiento
+Académico para estudiantes universitarios que trabajan.
+
+Estructura (pestañas):
+  1. Predicción Individual  -> formulario + lógica T1/T2/Nota Final +
+     regresión lineal (si no tiene nota final) + clasificación
+     (Random Forest / Regresión Logística / Red Neuronal) + cluster.
+  2. Comparación de Modelos -> métricas de clasificación y regresión.
+  3. Perfiles Académicos (Clustering) -> visualización K-Means + PCA.
+  4. Ética en la IA -> mitigación de sesgos y disclaimer.
+  5. Exploración del Dataset -> vistazo general a los datos sintéticos.
+
+Ejecutar con:  streamlit run app.py
 """
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-import joblib
-import json
 import os
+import json
 
-BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, 'models', 'modelo_upn.pkl')
-META_PATH  = os.path.join(BASE_DIR, 'models', 'modelo_meta.json')
-DATA_PATH  = os.path.join(BASE_DIR, 'data',   'estudiantes_upn.csv')
+import numpy as np
+import pandas as pd
+import joblib
+import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
 
-LABEL_ES = {
-    'APROBADO_REGULAR':   '✅ Aprobado Regular',
-    'EN_RIESGO':          '⚠️ En Riesgo',
-    'RIESGO_ALTO':        '🔴 Riesgo Alto',
-    'DESERCION_PROBABLE': '🚨 Deserción Probable',
-}
-LABEL_COLOR = {
-    'APROBADO_REGULAR':   '#2e7d32',
-    'EN_RIESGO':          '#f57f17',
-    'RIESGO_ALTO':        '#e65100',
-    'DESERCION_PROBABLE': '#b71c1c',
-}
-RECOMENDACIONES = {
-    'APROBADO_REGULAR': [
-        'Mantén tu ritmo de asistencia y estudio.',
-        'Considera tomar talleres de certificación para potenciar tu perfil.',
-        'Apoya a compañeros en riesgo a través de tutoría entre pares.',
-    ],
-    'EN_RIESGO': [
-        'Incrementa tus horas de estudio al menos 2h adicionales por semana.',
-        'Acude al servicio de tutoría de la UPN antes de que cierren el ciclo.',
-        'Habla con tu jefe sobre flexibilidad horaria durante épocas de exámenes.',
-        'Revisa si puedes reducir un curso este semestre.',
-    ],
-    'RIESGO_ALTO': [
-        '⚡ Prioridad inmediata: habla con tu asesor académico esta semana.',
-        'Evalúa retirarte de cursos en los que ya no puedas recuperar la nota.',
-        'Busca el programa de becas o fraccionamiento de pensión si tienes deuda.',
-        'Reorganiza tus turnos laborales para asistir al 70% mínimo de clases.',
-    ],
-    'DESERCION_PROBABLE': [
-        '🚨 Acude AHORA al área de Bienestar Universitario de la UPN.',
-        'Solicita una entrevista de retención con tu coordinador de carrera.',
-        'Infórmate sobre el programa "Reserva de matrícula" para no perder tu avance.',
-        'Evalúa pausar el ciclo formalmente en lugar de abandonar sin trámite.',
-        'Contacta a Servicios Estudiantiles para apoyo psicológico y financiero.',
-    ],
-}
+MODELS_DIR = "models"
+DATA_DIR = "data"
 
-st.set_page_config(page_title='Predictor Académico UPN', page_icon='🎓',
-                   layout='wide', initial_sidebar_state='expanded')
-
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-html,body,[class*="css"]{font-family:'Inter',sans-serif;}
-.bloque-titulo{
-    background:linear-gradient(90deg,#003366,#0055a4);
-    color:white!important;padding:9px 18px;border-radius:8px;
-    font-size:1rem;font-weight:700;margin-bottom:14px;}
-.resultado-principal{
-    border-radius:14px;padding:26px;margin:16px 0;color:white;
-    font-size:1.5rem;font-weight:700;text-align:center;
-    box-shadow:0 4px 15px rgba(0,0,0,0.2);}
-.curso-badge{
-    border-radius:8px;padding:10px 16px;margin:6px 0;
-    color:white;font-weight:600;font-size:0.95rem;}
-.semestre-box{
-    border-radius:12px;padding:20px;text-align:center;
-    font-size:1.3rem;font-weight:700;margin:12px 0;color:white;}
-.insight-box{
-    background:#f0f4ff;border-left:4px solid #003366;
-    border-radius:8px;padding:14px 18px;margin:10px 0;font-size:0.95rem;}
-.stButton>button{
-    background-color:#003366;color:white;border-radius:8px;
-    padding:12px 30px;font-size:1.05rem;font-weight:700;border:none;width:100%;}
-.stButton>button:hover{background-color:#0055a4;}
-h1{color:#003366!important;}
-.sidebar-title{color:#003366;font-weight:700;font-size:1.1rem;}
-</style>
-""", unsafe_allow_html=True)
-
-
-@st.cache_resource(show_spinner=False)
-def cargar_modelo():
-    if not os.path.exists(MODEL_PATH):
-        return None, None
-    modelo = joblib.load(MODEL_PATH)
-    meta   = {}
-    if os.path.exists(META_PATH):
-        with open(META_PATH, encoding='utf-8') as f:
-            meta = json.load(f)
-    return modelo, meta
-
-
-# ── HEADER ────────────────────────────────────────────────────────────
-_, col_title = st.columns([1, 5])
-with col_title:
-    st.title('🎓 Predictor de Situación Académica')
-    st.markdown('**Universidad Privada del Norte** · Modalidad para Gente que Trabaja')
-st.divider()
-
-modelo, meta = cargar_modelo()
-
-with st.sidebar:
-    st.markdown('<p class="sidebar-title">📊 Estado del Modelo</p>', unsafe_allow_html=True)
-    if modelo is None:
-        st.error('Modelo no entrenado aún.')
-        st.info('Ve a **⚙️ Entrenar Modelo** para generarlo.')
-    else:
-        st.success('Modelo cargado ✓')
-        if meta:
-            st.metric('Accuracy (test)',         f"{meta.get('accuracy_test',0):.1%}")
-            st.metric('F1-weighted',             f"{meta.get('f1_weighted',0):.1%}")
-            st.metric('Registros entrenamiento', meta.get('n_registros','—'))
-            fecha = meta.get('fecha_entrenamiento','')[:16].replace('T',' ')
-            st.caption(f'Última actualización: {fecha}')
-    st.divider()
-    st.markdown('<p class="sidebar-title">📁 Dataset</p>', unsafe_allow_html=True)
-    if os.path.exists(DATA_PATH):
-        st.info(f"{len(pd.read_csv(DATA_PATH))} casos registrados")
-    else:
-        st.warning('Sin dataset aún.')
-
-import sys
-sys.path.insert(0, BASE_DIR)
-from predictor_notas import (
-    CURSOS_UPN, predecir_curso, predecir_semestre,
-    SITUACION_CURSO_ES, SITUACION_CURSO_COLOR,
-    SITUACION_SEMESTRE_ES, SITUACION_SEMESTRE_COLOR,
-    RECOMENDACIONES_CURSO,
+st.set_page_config(
+    page_title="Sistema Predictivo de Rendimiento Académico",
+    page_icon="🎓",
+    layout="wide",
 )
 
-tab1, tab2, tab3, tab4 = st.tabs([
-    '🔮 Predictor', '➕ Agregar Caso', '📊 Estadísticas', '⚙️ Entrenar Modelo'
-])
+# ----------------------------------------------------------------------
+# Utilidades de carga (con cache para no releer disco en cada interacción)
+# ----------------------------------------------------------------------
 
-# ══════════════════════════════════════════════════════════════════════
-# TAB 1 — PREDICTOR UNIFICADO
-# ══════════════════════════════════════════════════════════════════════
-with tab1:
-    if modelo is None:
-        st.warning('Primero entrena el modelo en **⚙️ Entrenar Modelo**.')
-        st.stop()
-
-    st.caption('Completa los datos del estudiante y las notas de tus cursos. Al presionar **Analizar**, el modelo combinará todo para darte una predicción única e integrada.')
-
-    # ── BLOQUE 1: DATOS GENERALES ──────────────────────────────────────
-    st.markdown('<div class="bloque-titulo">📋 Datos generales del estudiante</div>', unsafe_allow_html=True)
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown('**📚 Académico**')
-        semestre            = st.slider('Semestre actual',             1, 10,   3,          key='sem')
-        cursos_matriculados = st.slider('Cursos matriculados',         1,  6,   4,          key='cmat')
-        promedio_ponderado  = st.slider('Promedio ponderado (0-20)', 0.0, 20.0, 13.0, 0.5, key='prom')
-        cursos_jalados      = st.slider('Cursos jalados acumulados',   0,  20,  0,          key='jal')
-        turno               = st.selectbox('Turno de clases', ['noche','sabado_domingo'],   key='turno')
-    with c2:
-        st.markdown('**⏰ Asistencia y dedicación**')
-        asistencia       = st.slider('Asistencia a clases (%)',      0, 100, 75,          key='asist')
-        entrega_trabajos = st.slider('Entrega de trabajos (%)',      0, 100, 80,          key='ent')
-        horas_estudio    = st.slider('Horas de estudio por semana', 0.0, 30.0, 10.0, 0.5, key='hest')
-        participacion    = st.slider('Participación en clase (1-5)', 1,   5,  3,          key='part')
-        uso_tutoria      = st.selectbox('¿Usa tutoría UPN?', [0,1],
-                            format_func=lambda x: 'Sí' if x else 'No', key='tut')
-    with c3:
-        st.markdown('**💼 Personal / Laboral**')
-        horas_trabajo     = st.slider('Horas de trabajo semanal',     0,  60, 40,          key='ht')
-        modalidad_trabajo = st.selectbox('Modalidad de trabajo',
-                            ['presencial','remoto','mixto','sin_trabajo'], key='mod')
-        distancia_campus  = st.slider('Distancia al campus (km)',   0.0, 80.0, 10.0, 0.5, key='dist')
-        internet_estable  = st.selectbox('¿Internet estable en casa?', [1,0],
-                            format_func=lambda x: 'Sí' if x else 'No', key='inet')
-        apoyo_familiar    = st.slider('Apoyo familiar (1-5)',         1,   5,  3,          key='apo')
-        deuda_pension     = st.selectbox('Meses de deuda en pensión', [0,1,2,3],
-                            format_func=lambda x: f'{x} mes(es)' if x else 'Al día', key='deu')
-
-    st.divider()
-
-    # ── BLOQUE 2: CURSOS Y NOTAS ───────────────────────────────────────
-    st.markdown('<div class="bloque-titulo">📚 Notas de tus cursos — T1 / T2</div>', unsafe_allow_html=True)
-
-    ciclos_disp = sorted({info['ciclo'] for info in CURSOS_UPN.values()})
-    try:
-        idx_default = ciclos_disp.index(semestre) + 1
-    except ValueError:
-        idx_default = 0
-
-    ciclo_sel = st.selectbox(
-        'Filtra cursos por ciclo:',
-        ['Todos'] + [f'Ciclo {c}' for c in ciclos_disp],
-        index=idx_default, key='ciclo_fil'
-    )
-    if ciclo_sel == 'Todos':
-        lista_nombres = list(CURSOS_UPN.keys())
-    else:
-        cn = int(ciclo_sel.replace('Ciclo ',''))
-        lista_nombres = [n for n, info in CURSOS_UPN.items() if info['ciclo'] == cn]
-
-    cursos_sel = st.multiselect(
-        'Selecciona tus cursos de este ciclo:',
-        lista_nombres,
-        default=lista_nombres[:4] if len(lista_nombres) >= 4 else lista_nombres,
-        key='cursos_sel'
-    )
-
-    notas_cursos = {}
-    if cursos_sel:
-        for i, nombre in enumerate(cursos_sel):
-            info  = CURSOS_UPN[nombre]
-            emoji = {'matematica':'🔢','carrera':'💻','letras':'📖'}[info['tipo']]
-            with st.expander(
-                f"{emoji} **{nombre}** ({info['codigo']}) · Ciclo {info['ciclo']} · {info['creditos']} créditos",
-                expanded=True
-            ):
-                nc1, nc2, nc3 = st.columns(3)
-                with nc1:
-                    t1       = st.slider('Nota T1', 0.0, 20.0, 13.0, 0.5, key=f't1_{i}')
-                    tiene_t2 = st.checkbox('¿Ya tienes nota T2?', key=f'cht2_{i}')
-                with nc2:
-                    if tiene_t2:
-                        t2 = st.slider('Nota T2', 0.0, 20.0, 12.0, 0.5, key=f't2_{i}')
-                    else:
-                        t2 = None
-                        st.info('Solo T1 para la proyección.')
-                with nc3:
-                    entiende = st.slider('¿Cuánto entiendes el curso? (1=nada · 5=muy bien)',
-                                         1, 5, 3, key=f'ent_{i}')
-                notas_cursos[nombre] = {'t1': t1, 't2': t2, 'entiende': entiende}
-    else:
-        st.info('Selecciona al menos un curso para ingresar sus notas.')
-
-    st.divider()
-
-    # ── BOTÓN ÚNICO ────────────────────────────────────────────────────
-    analizar = st.button('🔮 Analizar situación académica completa', use_container_width=True)
-
-    if analizar:
-        # ── PASO 1: Calcular resultados por curso con predictor_notas ─
-        resultados_cursos = []
-        for nombre, vals in notas_cursos.items():
-            res = predecir_curso(
-                nombre_curso    = nombre,
-                t1              = vals['t1'],
-                t2              = vals['t2'],
-                horas_estudio   = horas_estudio,
-                asistencia      = asistencia,
-                entiende_curso  = vals['entiende'],
-                horas_trabajo   = horas_trabajo,
-                semestre_actual = semestre,
-            )
-            resultados_cursos.append(res)
-
-        # ── PASO 2: Calcular las 4 features de notas reales ───────────
-        if resultados_cursos:
-            notas_t1_list = [r['nota_t1'] for r in resultados_cursos]
-            notas_t2_list = [r['nota_t2'] for r in resultados_cursos if r['nota_t2'] is not None]
-            proy_list     = [r['proyeccion_nota_final'] for r in resultados_cursos]
-            creds_list    = [CURSOS_UPN[r['curso']]['creditos'] for r in resultados_cursos]
-
-            promedio_t1_real = round(float(np.mean(notas_t1_list)), 2)
-            promedio_t2_real = round(float(np.mean(notas_t2_list)), 2) if notas_t2_list else promedio_t1_real
-
-            cursos_en_riesgo = sum(
-                1 for r in resultados_cursos
-                if r['situacion_curso'] in ('PROBABLE_JALE','MATEMATICAMENTE_IMPOSIBLE')
-            )
-            total_creditos    = sum(creds_list)
-            creditos_en_riesgo= sum(
-                CURSOS_UPN[r['curso']]['creditos'] for r in resultados_cursos
-                if r['situacion_curso'] in ('PROBABLE_JALE','MATEMATICAMENTE_IMPOSIBLE')
-            )
-            pct_creditos_riesgo = round(creditos_en_riesgo / total_creditos, 2) if total_creditos > 0 else 0.0
-
-            resumen_sem = predecir_semestre(resultados_cursos)
+@st.cache_resource
+def cargar_artefactos():
+    faltantes = []
+    archivos = {
+        "reg_lineal": "regresion_lineal_examen.pkl",
+        "scaler_reg": "scaler_regresion.pkl",
+        "log_reg": "logistic_regression.pkl",
+        "rf": "random_forest.pkl",
+        "scaler_clf": "scaler_clasificacion.pkl",
+        "mlp": "mlp_neural_network.pkl",
+        "kmeans": "kmeans.pkl",
+        "scaler_cluster": "scaler_clustering.pkl",
+        "pca": "pca_clustering.pkl",
+        "etiquetas_clusters": "etiquetas_clusters.pkl",
+        "encoder_modalidad": "encoder_modalidad.pkl",
+        "encoder_situacion": "encoder_situacion.pkl",
+    }
+    objetos = {}
+    for clave, archivo in archivos.items():
+        ruta = os.path.join(MODELS_DIR, archivo)
+        if not os.path.exists(ruta):
+            faltantes.append(archivo)
         else:
-            # Sin cursos seleccionados: valores neutros basados en promedio histórico
-            promedio_t1_real     = promedio_ponderado
-            promedio_t2_real     = promedio_ponderado
-            cursos_en_riesgo     = 0
-            pct_creditos_riesgo  = 0.0
-            resumen_sem          = None
+            objetos[clave] = joblib.load(ruta)
 
-        # ── PASO 3: Input al modelo con TODAS las features ────────────
-        # Ahora el modelo recibe directamente promedio_t1, promedio_t2,
-        # cursos_en_riesgo_notas y pct_creditos_riesgo como features reales
-        input_ml = pd.DataFrame([{
-            'semestre':                  semestre,
-            'cursos_matriculados':       cursos_matriculados,
-            'horas_trabajo_semanal':     horas_trabajo,
-            'modalidad_trabajo':         modalidad_trabajo,
-            'turno_clases':              turno,
-            'asistencia_pct':            asistencia,
-            'horas_estudio_semanal':     horas_estudio,
-            'promedio_ponderado':        promedio_ponderado,
-            'cursos_jalados_acumulados': cursos_jalados,
-            'entrega_trabajos_pct':      entrega_trabajos,
-            'participacion_clase':       participacion,
-            'distancia_campus_km':       distancia_campus,
-            'internet_estable':          internet_estable,
-            'apoyo_familiar':            apoyo_familiar,
-            'uso_tutoria':               uso_tutoria,
-            'deuda_pension':             deuda_pension,
-            # ── Features de notas reales ──
-            'promedio_t1':               promedio_t1_real,
-            'promedio_t2':               promedio_t2_real,
-            'cursos_en_riesgo_notas':    cursos_en_riesgo,
-            'pct_creditos_riesgo':       pct_creditos_riesgo,
-        }])
+    if faltantes:
+        return None, faltantes
 
-        prediccion = modelo.predict(input_ml)[0]
-        probas     = modelo.predict_proba(input_ml)[0]
-        clases     = modelo.classes_
+    with open(os.path.join(MODELS_DIR, "metricas.json"), "r", encoding="utf-8") as f:
+        objetos["metricas"] = json.load(f)
 
-        # ══════════════════════════════════════════════════════════════
-        # RESULTADO ÚNICO INTEGRADO
-        # ══════════════════════════════════════════════════════════════
-        st.markdown('---')
-        st.markdown('## 📊 Resultado integrado')
-
-        # Caja principal
-        st.markdown(f"""
-        <div class="resultado-principal" style="background:{LABEL_COLOR[prediccion]};">
-            {LABEL_ES[prediccion]}
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Probabilidades por escenario
-        st.markdown('**Probabilidad por escenario:**')
-        pcols = st.columns(4)
-        for i, clase in enumerate(['APROBADO_REGULAR','EN_RIESGO','RIESGO_ALTO','DESERCION_PROBABLE']):
-            if clase in clases:
-                idx = list(clases).index(clase)
-                pcols[i].metric(LABEL_ES[clase].split(' ',1)[1], f"{probas[idx]:.1%}")
-
-        # Insight: qué aportaron las notas a la predicción
-        if resultados_cursos:
-            with st.container(border=True):
-                st.markdown('📌 **Variables de notas usadas en el modelo:**')
-                ic1, ic2, ic3, ic4 = st.columns(4)
-                ic1.metric('Promedio T1', f"{promedio_t1_real}/20")
-                ic2.metric('Promedio T2', f"{promedio_t2_real}/20")
-                ic3.metric('Cursos en riesgo', f"{cursos_en_riesgo}/{len(resultados_cursos)}")
-                ic4.metric('% créditos en riesgo', f"{pct_creditos_riesgo*100:.0f}%")
-
-        # Recomendaciones generales
-        st.markdown('**📋 Recomendaciones generales:**')
-        for rec in RECOMENDACIONES[prediccion]:
-            st.markdown(f'- {rec}')
-
-        # Situación global del semestre
-        if resumen_sem:
-            st.divider()
-            st.markdown('## 🎯 Situación global del semestre')
-            color_sem = SITUACION_SEMESTRE_COLOR[resumen_sem['situacion_semestre']]
-            etiq_sem  = SITUACION_SEMESTRE_ES[resumen_sem['situacion_semestre']]
-            st.markdown(f'<div class="semestre-box" style="background:{color_sem};">{etiq_sem}</div>',
-                        unsafe_allow_html=True)
-
-            ms1, ms2, ms3, ms4 = st.columns(4)
-            ms1.metric('✅ Probables aprobar', resumen_sem['probables_aprobacion'])
-            ms2.metric('⚠️ En juego',          resumen_sem['en_juego'])
-            ms3.metric('🚨 Probables jalar',   resumen_sem['probables_jale'])
-            ms4.metric('⚡ Créditos en riesgo',
-                       f"{resumen_sem['creditos_en_riesgo']}/{resumen_sem['creditos_totales']}")
-
-        # Detalle por curso
-        if resultados_cursos:
-            st.divider()
-            st.markdown('## 📚 Detalle por curso')
-            for res in resultados_cursos:
-                info_c  = CURSOS_UPN[res['curso']]
-                emoji_c = {'matematica':'🔢','carrera':'💻','letras':'📖'}[info_c['tipo']]
-                color_c = SITUACION_CURSO_COLOR[res['situacion_curso']]
-                etiq_c  = SITUACION_CURSO_ES[res['situacion_curso']]
-                with st.expander(f"{emoji_c} **{res['curso']}**", expanded=True):
-                    st.markdown(f"""
-                    <div class="curso-badge" style="background:{color_c};">
-                        {etiq_c} &nbsp;|&nbsp;
-                        Proyección final: <b>{res['proyeccion_nota_final']}/20</b> &nbsp;|&nbsp;
-                        Nota máx. posible: <b>{res['nota_maxima_posible']}/20</b>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    if res['nota_t2'] is not None and res['puede_aprobar']:
-                        min_req = res.get('nota_minima_final_requerida', 0)
-                        if min_req > 20:
-                            st.error(f'Necesitarías {min_req:.1f}/20 en el Final → matemáticamente imposible.')
-                        elif min_req > 14:
-                            st.warning(f'Necesitas al menos **{min_req:.1f}/20** en el Final.')
-                        elif min_req > 0:
-                            st.success(f'Necesitas al menos **{min_req:.1f}/20** en el Final para aprobar.')
-                        else:
-                            st.success('Ya tienes la nota asegurada.')
-                    for rec in RECOMENDACIONES_CURSO[res['situacion_curso']]:
-                        st.markdown(f'- {rec}')
-
-            df_res = pd.DataFrame([{
-                'Curso':       r['curso'],
-                'Código':      r.get('codigo_banner','—'),
-                'T1':          r['nota_t1'],
-                'T2':          r['nota_t2'] if r['nota_t2'] else '—',
-                'Proy. Final': r['proyeccion_nota_final'],
-                'Nota Máx.':  r['nota_maxima_posible'],
-                'Situación':   SITUACION_CURSO_ES[r['situacion_curso']],
-            } for r in resultados_cursos])
-            st.dataframe(df_res, use_container_width=True, hide_index=True)
+    return objetos, []
 
 
-# ══════════════════════════════════════════════════════════════════════
-# TAB 2 — AGREGAR CASO
-# ══════════════════════════════════════════════════════════════════════
-with tab2:
-    st.subheader('➕ Agregar caso real al dataset de entrenamiento')
-    st.info('Agrega estudiantes reales para mejorar la precisión del modelo.')
+@st.cache_data
+def cargar_dataset():
+    ruta = os.path.join(DATA_DIR, "dataset_con_clusters.csv")
+    if os.path.exists(ruta):
+        return pd.read_csv(ruta)
+    ruta_base = os.path.join(DATA_DIR, "dataset_estudiantes.csv")
+    if os.path.exists(ruta_base):
+        return pd.read_csv(ruta_base)
+    return None
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown('**📚 Académico**')
-        n_semestre = st.slider('Semestre', 1, 10, 3, key='n_sem')
-        n_cursos   = st.slider('Cursos matriculados', 1, 6, 4, key='n_cur')
-        n_promedio = st.slider('Promedio ponderado', 0.0, 20.0, 13.0, 0.5, key='n_prom')
-        n_jalados  = st.slider('Cursos jalados acumulados', 0, 20, 0, key='n_jal')
-        n_turno    = st.selectbox('Turno', ['noche','sabado_domingo'], key='n_turno')
-    with c2:
-        st.markdown('**⏰ Dedicación**')
-        n_asistencia    = st.slider('Asistencia (%)', 0, 100, 75, key='n_asist')
-        n_entrega       = st.slider('Entrega trabajos (%)', 0, 100, 80, key='n_ent')
-        n_hestudio      = st.slider('Horas estudio/semana', 0.0, 30.0, 10.0, 0.5, key='n_hest')
-        n_participacion = st.slider('Participación (1-5)', 1, 5, 3, key='n_part')
-        n_tutoria       = st.selectbox('Usa tutoría', [0,1],
-                            format_func=lambda x: 'Sí' if x else 'No', key='n_tut')
-    with c3:
-        st.markdown('**💼 Personal/Laboral + Notas**')
-        n_htrabajo   = st.slider('Horas trabajo/semana', 0, 60, 40, key='n_ht')
-        n_modalidad  = st.selectbox('Modalidad trabajo',
-                        ['presencial','remoto','mixto','sin_trabajo'], key='n_mod')
-        n_distancia  = st.slider('Distancia campus (km)', 0.0, 80.0, 10.0, 0.5, key='n_dist')
-        n_internet   = st.selectbox('Internet estable', [1,0],
-                        format_func=lambda x: 'Sí' if x else 'No', key='n_int')
-        n_apoyo      = st.slider('Apoyo familiar (1-5)', 1, 5, 3, key='n_apo')
-        n_deuda      = st.selectbox('Meses deuda pensión', [0,1,2,3], key='n_deu')
 
-    st.markdown('**📝 Notas del ciclo actual**')
-    na1, na2, na3, na4 = st.columns(4)
-    with na1:
-        n_prom_t1 = st.slider('Promedio T1', 0.0, 20.0, 13.0, 0.5, key='n_pt1')
-    with na2:
-        n_prom_t2 = st.slider('Promedio T2', 0.0, 20.0, 12.0, 0.5, key='n_pt2')
-    with na3:
-        n_cursos_riesgo = st.slider('Cursos con riesgo de jale', 0, 6, 0, key='n_crisk')
-    with na4:
-        n_pct_riesgo = st.slider('% créditos en riesgo', 0.0, 1.0, 0.0, 0.05, key='n_pctrisk')
+ART, FALTANTES = cargar_artefactos()
+DF = cargar_dataset()
 
-    n_situacion = st.selectbox(
-        '📌 Situación académica real del estudiante',
-        ['APROBADO_REGULAR','EN_RIESGO','RIESGO_ALTO','DESERCION_PROBABLE'],
-        format_func=lambda x: LABEL_ES[x]
+if ART is None:
+    st.error(
+        "⚠️ No se encontraron los artefactos entrenados: "
+        + ", ".join(FALTANTES)
+        + ".\n\nEjecuta primero `python entrenamiento.py` en esta misma carpeta "
+        "para generar los datos y entrenar los modelos antes de iniciar el dashboard."
+    )
+    st.stop()
+
+FEATURES_REG = ART["metricas"]["features_regresion_examen"]
+FEATURES_CLF = ART["metricas"]["features_clasificacion"]
+FEATURES_CLUSTER = ART["metricas"]["features_clustering"]
+CLASES_SITUACION = list(ART["encoder_situacion"].classes_)
+
+COLOR_SITUACION = {
+    "Aprobado": "#2ecc71",
+    "Riesgo": "#f39c12",
+    "Desercion": "#e74c3c",
+}
+
+# ----------------------------------------------------------------------
+# Sidebar de navegación
+# ----------------------------------------------------------------------
+st.sidebar.title("🎓 Sistema Predictivo")
+st.sidebar.caption("Rendimiento académico de estudiantes que trabajan")
+pagina = st.sidebar.radio(
+    "Navegación",
+    [
+        "🔮 Predicción Individual",
+        "📊 Comparación de Modelos",
+        "🧩 Perfiles Académicos (Clustering)",
+        "⚖️ Ética en la IA",
+        "🗃️ Exploración del Dataset",
+    ],
+)
+
+st.sidebar.divider()
+st.sidebar.info(
+    "Proyecto final — Curso de Sistemas Inteligentes.\n\n"
+    "Modelos: Regresión Lineal, Regresión Logística, Random Forest, "
+    "Red Neuronal (MLP) y K-Means."
+)
+
+
+# ========================================================================
+# PÁGINA 1: PREDICCIÓN INDIVIDUAL
+# ========================================================================
+def pagina_prediccion():
+    st.title("🔮 Predicción de Rendimiento Académico")
+    st.markdown(
+        "Completa los datos del estudiante. Si aún no tienes la **Nota Final**, "
+        "el sistema la **predice** con un modelo de Regresión Lineal a partir "
+        "de tus hábitos."
     )
 
-    if st.button('💾 Guardar caso al dataset', use_container_width=True):
-        nuevo = {
-            'semestre': n_semestre, 'cursos_matriculados': n_cursos,
-            'horas_trabajo_semanal': n_htrabajo, 'modalidad_trabajo': n_modalidad,
-            'turno_clases': n_turno, 'asistencia_pct': n_asistencia,
-            'horas_estudio_semanal': n_hestudio, 'promedio_ponderado': n_promedio,
-            'cursos_jalados_acumulados': n_jalados, 'entrega_trabajos_pct': n_entrega,
-            'participacion_clase': n_participacion, 'distancia_campus_km': n_distancia,
-            'internet_estable': n_internet, 'apoyo_familiar': n_apoyo,
-            'uso_tutoria': n_tutoria, 'deuda_pension': n_deuda,
-            'promedio_t1': n_prom_t1, 'promedio_t2': n_prom_t2,
-            'cursos_en_riesgo_notas': n_cursos_riesgo,
-            'pct_creditos_riesgo': n_pct_riesgo,
-            'situacion_academica': n_situacion,
+    col_izq, col_der = st.columns([1, 1])
+
+    # ------------------ Columna izquierda: notas ------------------
+    with col_izq:
+        st.subheader("1️⃣ Evaluaciones")
+        T1 = st.slider("Nota T1 (0 - 20)", 0.0, 20.0, 12.0, 0.5)
+        T2 = st.slider("Nota T2 (0 - 20)", 0.0, 20.0, 12.0, 0.5)
+
+        tiene_nota_final = st.radio(
+            "¿Ya tienes tu Nota Final (examen final ya rendido)?",
+            ["No, todavía no la tengo", "Sí, ya la tengo"],
+            index=0,
+        )
+
+    # ------------------ Columna derecha: hábitos -------------------
+    with col_der:
+        st.subheader("2️⃣ Hábitos y contexto")
+        horas_trabajo = st.slider("Horas de trabajo semanales", 0, 60, 25)
+        horas_estudio = st.slider("Horas de estudio semanales", 0, 40, 12)
+        asistencia = st.slider("Asistencia a clases (%)", 0, 100, 80)
+        entendimiento = st.slider("Entendimiento del curso (1-10)", 1, 10, 6)
+        horas_sueno = st.slider("Horas de sueño diarias", 3.0, 10.0, 6.5, 0.5)
+        nivel_estres = st.slider("Nivel de estrés autopercibido (1-10)", 1, 10, 5)
+        carga_familiar = st.slider("Personas que dependen económicamente de ti", 0, 5, 0)
+
+    with st.expander("➕ Datos adicionales (mejoran la precisión del perfil / cluster)"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            edad = st.number_input("Edad", 17, 45, 22)
+            ciclo = st.number_input("Ciclo académico", 1, 12, 5)
+        with c2:
+            tiene_beca = st.selectbox("¿Tiene beca?", ["No", "Sí"]) == "Sí"
+            num_cursos = st.number_input("Cursos matriculados este ciclo", 1, 10, 5)
+        with c3:
+            modalidad = st.selectbox(
+                "Modalidad de trabajo",
+                list(ART["encoder_modalidad"].classes_),
+            )
+            tiempo_transporte = st.slider("Horas diarias en transporte", 0.0, 4.0, 1.0, 0.1)
+        salud_mental = st.slider(
+            "Salud mental autopercibida (1-10)", 1, 10,
+            max(1, 10 - nivel_estres // 1) if nivel_estres else 6,
+        )
+
+    st.divider()
+
+    # --- Widget condicional de nota final manual ---
+    nota_final_manual = None
+    if tiene_nota_final == "Sí, ya la tengo":
+        nota_final_manual = st.number_input(
+            "Ingresa tu Nota Final (0-20)", 0.0, 20.0, 13.0, 0.5, key="nota_final_input"
+        )
+
+    if st.button("📈 Calcular resultado", type="primary", use_container_width=True):
+        entrada_reg = pd.DataFrame([{
+            "horas_estudio_semanal": horas_estudio,
+            "horas_trabajo_semanal": horas_trabajo,
+            "asistencia_pct": asistencia,
+            "entendimiento_curso": entendimiento,
+            "horas_sueno": horas_sueno,
+            "nivel_estres": nivel_estres,
+            "carga_familiar": carga_familiar,
+            "T1": T1,
+            "T2": T2,
+        }])[FEATURES_REG]
+
+        if tiene_nota_final == "Sí, ya la tengo":
+            nota_final = float(nota_final_manual)
+            examen_final_usado = round((nota_final - 0.20 * T1 - 0.30 * T2) / 0.50, 2)
+            origen_nota = "Ingresada manualmente por el usuario"
+        else:
+            X_reg_s = ART["scaler_reg"].transform(entrada_reg)
+            examen_final_usado = float(ART["reg_lineal"].predict(X_reg_s)[0])
+            examen_final_usado = round(np.clip(examen_final_usado, 0, 20), 2)
+            nota_final = round(0.20 * T1 + 0.30 * T2 + 0.50 * examen_final_usado, 2)
+            origen_nota = "Predicha con Regresión Lineal (Machine Learning)"
+
+        st.session_state["resultado"] = {
+            "nota_final": nota_final,
+            "examen_final_usado": examen_final_usado,
+            "origen_nota": origen_nota,
+            "T1": T1, "T2": T2,
+            "horas_trabajo": horas_trabajo, "horas_estudio": horas_estudio,
+            "asistencia": asistencia, "entendimiento": entendimiento,
+            "horas_sueno": horas_sueno, "nivel_estres": nivel_estres,
+            "carga_familiar": carga_familiar, "edad": edad, "ciclo": ciclo,
+            "tiene_beca": int(tiene_beca), "num_cursos": num_cursos,
+            "modalidad": modalidad, "tiempo_transporte": tiempo_transporte,
+            "salud_mental": salud_mental,
         }
-        os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
-        df_exist = pd.read_csv(DATA_PATH) if os.path.exists(DATA_PATH) else pd.DataFrame()
-        df_final = pd.concat([df_exist, pd.DataFrame([nuevo])], ignore_index=True)
-        df_final.to_csv(DATA_PATH, index=False)
-        st.success(f'✅ Caso guardado. Total: {len(df_final)} registros.')
 
+    if "resultado" not in st.session_state:
+        st.info("Completa el formulario y presiona **Calcular resultado**.")
+        return
 
-# ══════════════════════════════════════════════════════════════════════
-# TAB 3 — ESTADÍSTICAS
-# ══════════════════════════════════════════════════════════════════════
-with tab3:
-    st.subheader('📊 Estadísticas del dataset de entrenamiento')
-    if not os.path.exists(DATA_PATH):
-        st.warning('No hay dataset aún.')
-    else:
-        df = pd.read_csv(DATA_PATH)
-        st.metric('Total de registros', len(df))
-        dist = df['situacion_academica'].value_counts().reset_index()
-        dist.columns = ['Situación','Cantidad']
-        dist['Situación_ES'] = dist['Situación'].map(LABEL_ES)
-        try:
-            import plotly.express as px
-            fig = px.pie(dist, values='Cantidad', names='Situación_ES',
-                         color='Situación',
-                         color_discrete_map={k:v for k,v in LABEL_COLOR.items()},
-                         hole=0.35)
-            fig.update_layout(margin=dict(t=20,b=20))
+    r = st.session_state["resultado"]
+
+    st.header("📋 Resultado")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Nota Final estimada", f"{r['nota_final']:.2f} / 20")
+    m2.metric("Examen Final usado", f"{r['examen_final_usado']:.2f} / 20")
+    m3.metric("Origen del dato", "🧮 ML" if "Predicha" in r["origen_nota"] else "✍️ Manual")
+    st.caption(r["origen_nota"])
+
+    # ---------------- 2. Clasificación de Situación Académica ----------------
+    st.subheader("🎯 Situación Académica Predicha")
+
+    entrada_clf = pd.DataFrame([{
+        "edad": r["edad"], "ciclo": r["ciclo"],
+        "horas_trabajo_semanal": r["horas_trabajo"],
+        "tiempo_transporte": r["tiempo_transporte"],
+        "carga_familiar": r["carga_familiar"], "tiene_beca": r["tiene_beca"],
+        "num_cursos_matriculados": r["num_cursos"],
+        "horas_estudio_semanal": r["horas_estudio"], "horas_sueno": r["horas_sueno"],
+        "nivel_estres": r["nivel_estres"], "salud_mental_autopercibida": r["salud_mental"],
+        "asistencia_pct": r["asistencia"], "entendimiento_curso": r["entendimiento"],
+        "T1": r["T1"], "T2": r["T2"],
+        "modalidad_trabajo_enc": ART["encoder_modalidad"].transform([r["modalidad"]])[0],
+    }])[FEATURES_CLF]
+
+    X_clf_s = ART["scaler_clf"].transform(entrada_clf)
+
+    modelos_clf = {
+        "Random Forest (principal)": ART["rf"],
+        "Regresión Logística (base)": ART["log_reg"],
+        "Red Neuronal (MLP)": ART["mlp"],
+    }
+
+    tabs_modelos = st.tabs(list(modelos_clf.keys()))
+    pred_principal = None
+    for tab, (nombre, modelo) in zip(tabs_modelos, modelos_clf.items()):
+        with tab:
+            pred = modelo.predict(X_clf_s)[0]
+            etiqueta_pred = ART["encoder_situacion"].inverse_transform([pred])[0]
+            proba = modelo.predict_proba(X_clf_s)[0]
+            clases = ART["encoder_situacion"].classes_
+
+            if nombre.startswith("Random Forest"):
+                pred_principal = etiqueta_pred
+
+            color = COLOR_SITUACION.get(etiqueta_pred, "#3498db")
+            st.markdown(
+                f"### Predicción: <span style='color:{color}'>**{etiqueta_pred}**</span>",
+                unsafe_allow_html=True,
+            )
+            df_proba = pd.DataFrame({"Situación": clases, "Probabilidad": proba})
+            fig = px.bar(
+                df_proba, x="Situación", y="Probabilidad", color="Situación",
+                color_discrete_map=COLOR_SITUACION, text_auto=".1%",
+                range_y=[0, 1],
+            )
+            fig.update_layout(showlegend=False, height=320)
             st.plotly_chart(fig, use_container_width=True)
-        except ImportError:
-            st.dataframe(dist)
 
-        cols_resumen = ['promedio_ponderado','asistencia_pct','horas_trabajo_semanal']
-        for col in ['promedio_t1','promedio_t2']:
-            if col in df.columns:
-                cols_resumen.append(col)
-        resumen = df.groupby('situacion_academica')[cols_resumen].mean().round(2)
-        resumen.index = resumen.index.map(LABEL_ES)
-        st.dataframe(resumen, use_container_width=True)
-        st.dataframe(df.tail(20), use_container_width=True)
-        st.download_button('⬇️ Descargar dataset',
-                           df.to_csv(index=False).encode('utf-8'),
-                           'estudiantes_upn.csv','text/csv')
+    # ---------------- 3. Explicación lógica (transparencia) ----------------
+    with st.expander("🔍 ¿Por qué esta predicción? (factores clave)"):
+        st.markdown(f"""
+- **Balance carga académica vs. laboral:** {r['horas_estudio']}h de estudio vs
+  {r['horas_trabajo']}h de trabajo semanales.
+- **Asistencia:** {r['asistencia']}% (referencia de aprobación ≥ 55%).
+- **Nivel de estrés:** {r['nivel_estres']}/10 — variable con más peso en el
+  Random Forest para distinguir "Riesgo" de "Deserción".
+- **Carga familiar:** {r['carga_familiar']} persona(s) dependientes — impacta
+  el tiempo disponible para estudiar, no la capacidad del estudiante.
+        """)
+        st.caption(
+            "Nota: el modelo NO usa 'trabaja o no trabaja' como variable "
+            "determinante aislada — ver pestaña **Ética en la IA**."
+        )
+
+    # ---------------- 4. Perfil académico (cluster) ----------------
+    st.subheader("🧩 Perfil Académico (Clustering K-Means)")
+    entrada_cluster = pd.DataFrame([{
+        "horas_trabajo_semanal": r["horas_trabajo"],
+        "horas_estudio_semanal": r["horas_estudio"],
+        "asistencia_pct": r["asistencia"],
+        "nivel_estres": r["nivel_estres"],
+        "entendimiento_curso": r["entendimiento"],
+        "carga_familiar": r["carga_familiar"],
+    }])[FEATURES_CLUSTER]
+
+    X_cluster_s = ART["scaler_cluster"].transform(entrada_cluster)
+    cluster_id = int(ART["kmeans"].predict(X_cluster_s)[0])
+    etiqueta_cluster = ART["etiquetas_clusters"].get(str(cluster_id), ART["etiquetas_clusters"].get(cluster_id, "N/D"))
+
+    st.success(f"Perfil asignado: **{etiqueta_cluster}**")
+
+    perfiles_desc = {
+        "Trabajador Esforzado": "Equilibra bien trabajo y estudio; mantiene buena asistencia y bajo estrés relativo.",
+        "Riesgo por Ausentismo Laboral": "El trabajo reduce fuertemente su asistencia y tiempo de estudio.",
+        "Estudiante de Alto Rendimiento": "Dedica poco tiempo a trabajar y mucho a estudiar; alto rendimiento esperado.",
+        "Vulnerable por Carga Familiar y Estres": "Combina trabajo, responsabilidades familiares y estrés elevado: requiere apoyo institucional.",
+        "Perfil Mixto / Regular": "No presenta un patrón extremo en ninguna dimensión.",
+    }
+    st.caption(perfiles_desc.get(etiqueta_cluster, ""))
+
+    if pred_principal in ("Riesgo", "Desercion"):
+        st.warning(
+            "⚠️ Este resultado es una **estimación estadística**, no un diagnóstico. "
+            "Se recomienda acercarse a Tutoría Académica / Bienestar Universitario "
+            "para recibir acompañamiento personalizado."
+        )
 
 
-# ══════════════════════════════════════════════════════════════════════
-# TAB 4 — ENTRENAR MODELO
-# ══════════════════════════════════════════════════════════════════════
-with tab4:
-    st.subheader('⚙️ Entrenamiento del modelo predictivo')
-    st.info('⚠️ Si actualizaste el sistema, genera un dataset nuevo y re-entrena para que el modelo incluya las features de notas T1/T2.')
+# ========================================================================
+# PÁGINA 2: COMPARACIÓN DE MODELOS
+# ========================================================================
+def pagina_comparacion():
+    st.title("📊 Comparación de Modelos")
+    metricas = ART["metricas"]
+
+    st.subheader("Regresión Lineal — Predicción del Examen Final")
+    reg = metricas["regresion_lineal_examen_final"]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("R²", f"{reg['r2']:.3f}")
+    c2.metric("MAE", f"{reg['mae']:.3f}")
+    c3.metric("RMSE", f"{reg['rmse']:.3f}")
+
+    coefs = pd.DataFrame(
+        list(reg["coeficientes"].items()), columns=["Variable", "Coeficiente"]
+    ).sort_values("Coeficiente")
+    fig_coef = px.bar(
+        coefs, x="Coeficiente", y="Variable", orientation="h",
+        color="Coeficiente", color_continuous_scale="RdYlGn",
+        title="Impacto de cada variable en la nota del Examen Final",
+    )
+    st.plotly_chart(fig_coef, use_container_width=True)
+
+    st.divider()
+    st.subheader("Clasificación de Situación Académica")
+    clf = metricas["clasificacion"]
+
+    tabla = pd.DataFrame({
+        "Modelo": ["Regresión Logística (base)", "Random Forest (principal)"],
+        "Accuracy": [clf["logistic_regression"]["accuracy"], clf["random_forest"]["accuracy"]],
+        "F1 (macro)": [clf["logistic_regression"]["f1_macro"], clf["random_forest"]["f1_macro"]],
+        "Precisión (macro)": [clf["logistic_regression"]["precision_macro"], clf["random_forest"]["precision_macro"]],
+        "Recall (macro)": [clf["logistic_regression"]["recall_macro"], clf["random_forest"]["recall_macro"]],
+    })
+    st.dataframe(tabla.style.format({c: "{:.3f}" for c in tabla.columns[1:]}), use_container_width=True)
+
+    fig_comp = go.Figure()
+    for _, fila in tabla.iterrows():
+        fig_comp.add_trace(go.Bar(
+            name=fila["Modelo"],
+            x=["Accuracy", "F1 (macro)", "Precisión", "Recall"],
+            y=[fila["Accuracy"], fila["F1 (macro)"], fila["Precisión (macro)"], fila["Recall (macro)"]],
+        ))
+    fig_comp.update_layout(barmode="group", title="Regresión Logística vs Random Forest")
+    st.plotly_chart(fig_comp, use_container_width=True)
 
     col_a, col_b = st.columns(2)
     with col_a:
-        st.markdown('**Paso 1: Generar / actualizar dataset**')
-        n_generar = st.number_input('Casos sintéticos a generar',
-                                    min_value=100, max_value=5000, value=1200, step=100)
-        if st.button('🔄 Generar dataset sintético', use_container_width=True):
-            with st.spinner('Generando datos con features de notas T1/T2...'):
-                from generar_dataset import generar_dataset as gen_ds
-                df_gen = gen_ds(n_generar)
-                os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
-                # Si el CSV viejo existe pero no tiene las nuevas columnas, lo reemplazamos
-                if os.path.exists(DATA_PATH):
-                    df_exist = pd.read_csv(DATA_PATH)
-                    if 'promedio_t1' in df_exist.columns:
-                        df_final = pd.concat([df_exist, df_gen], ignore_index=True)
-                    else:
-                        df_final = df_gen  # Dataset viejo incompatible → reemplazar
-                        st.warning('Dataset anterior sin features de notas → reemplazado con datos nuevos.')
-                else:
-                    df_final = df_gen
-                df_final.to_csv(DATA_PATH, index=False)
-            st.success(f'✅ Dataset actualizado: {len(df_final)} registros totales.')
-
+        cm_lr = np.array(clf["logistic_regression"]["confusion_matrix"])
+        fig_cm_lr = px.imshow(
+            cm_lr, text_auto=True, x=CLASES_SITUACION, y=CLASES_SITUACION,
+            labels=dict(x="Predicho", y="Real"), title="Matriz de Confusión — Reg. Logística",
+            color_continuous_scale="Blues",
+        )
+        st.plotly_chart(fig_cm_lr, use_container_width=True)
     with col_b:
-        st.markdown('**Paso 2: Entrenar el modelo**')
-        st.caption('Random Forest con features de notas T1/T2 integradas.')
-        if st.button('🚀 Entrenar modelo ahora', use_container_width=True):
-            if not os.path.exists(DATA_PATH):
-                st.error('Primero genera el dataset (Paso 1).')
-            else:
-                with st.spinner('Entrenando... puede tomar 30-60 seg.'):
-                    import importlib, entrenar_modelo as em
-                    importlib.reload(em)
-                    pipeline, meta_result = em.entrenar()
-                st.success('✅ Modelo entrenado y guardado.')
-                st.metric('Accuracy',      f"{meta_result['accuracy_test']:.1%}")
-                st.metric('F1-weighted',   f"{meta_result['f1_weighted']:.1%}")
-                st.metric('CV-5 Accuracy', f"{meta_result['cv_accuracy_mean']:.1%} ± {meta_result['cv_accuracy_std']:.1%}")
-                st.info('Recarga la página (F5) para activar el modelo nuevo.')
+        cm_rf = np.array(clf["random_forest"]["confusion_matrix"])
+        fig_cm_rf = px.imshow(
+            cm_rf, text_auto=True, x=CLASES_SITUACION, y=CLASES_SITUACION,
+            labels=dict(x="Predicho", y="Real"), title="Matriz de Confusión — Random Forest",
+            color_continuous_scale="Greens",
+        )
+        st.plotly_chart(fig_cm_rf, use_container_width=True)
+
+    importancias = clf["random_forest"].get("feature_importance", {})
+    if importancias:
+        df_imp = pd.DataFrame(list(importancias.items()), columns=["Variable", "Importancia"])
+        df_imp = df_imp.sort_values("Importancia", ascending=True).tail(10)
+        fig_imp = px.bar(df_imp, x="Importancia", y="Variable", orientation="h",
+                          title="Top 10 variables más influyentes (Random Forest)")
+        st.plotly_chart(fig_imp, use_container_width=True)
 
     st.divider()
+    st.subheader("🧠 Red Neuronal (MLP) + búsqueda de hiperparámetros")
+    rn = metricas["red_neuronal"]
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**MLP Base (sin optimizar)**")
+        st.metric("Accuracy", f"{rn['mlp_base']['accuracy']:.3f}")
+        st.metric("F1 (macro)", f"{rn['mlp_base']['f1_macro']:.3f}")
+    with c2:
+        st.markdown("**MLP + GridSearchCV**")
+        st.metric("Accuracy", f"{rn['mlp_optimizado_gridsearch']['accuracy']:.3f}")
+        st.metric("F1 (macro)", f"{rn['mlp_optimizado_gridsearch']['f1_macro']:.3f}")
+
+    st.info(
+        f"✅ **Modelo final seleccionado:** MLP {rn['modelo_final_seleccionado']} "
+        f"(criterio: mejor F1-macro en test). "
+        f"Mejores hiperparámetros probados vía GridSearchCV: "
+        f"`{rn['mlp_optimizado_gridsearch']['mejores_hiperparametros']}` "
+        f"(F1-macro promedio en validación cruzada: "
+        f"{rn['mlp_optimizado_gridsearch']['cv_best_score_f1_macro']:.3f})."
+    )
+    st.caption(
+        "La búsqueda de hiperparámetros se evalúa con validación cruzada "
+        "(no directamente sobre el set de prueba) para evitar sobreajuste "
+        "en la selección del modelo. El sistema conserva siempre el modelo "
+        "con mejor desempeño real, sea el base o el optimizado."
+    )
+
+
+# ========================================================================
+# PÁGINA 3: CLUSTERING
+# ========================================================================
+def pagina_clustering():
+    st.title("🧩 Perfiles Académicos (Aprendizaje No Supervisado)")
+    st.markdown(
+        "Se aplicó **K-Means** sobre variables de comportamiento (horas de "
+        "trabajo, horas de estudio, asistencia, estrés, entendimiento y carga "
+        "familiar) para agrupar a los estudiantes en perfiles, sin usar la "
+        "nota como variable de entrada."
+    )
+
+    if DF is None or "cluster" not in DF.columns:
+        st.warning("No se encontró el dataset con clusters. Ejecuta `entrenamiento.py`.")
+        return
+
+    etiquetas = ART["etiquetas_clusters"]
+    conteo = DF["perfil_academico"].value_counts().reset_index()
+    conteo.columns = ["Perfil", "Cantidad"]
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        fig_pie = px.pie(conteo, names="Perfil", values="Cantidad",
+                          title="Distribución de estudiantes por perfil")
+        st.plotly_chart(fig_pie, use_container_width=True)
+    with col2:
+        fig_scatter = px.scatter(
+            DF, x="pca_x", y="pca_y", color="perfil_academico",
+            title="Proyección PCA (2D) de los clusters",
+            opacity=0.6,
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+    st.subheader("Características promedio por perfil")
+    cols_resumen = ["horas_trabajo_semanal", "horas_estudio_semanal", "asistencia_pct",
+                     "nivel_estres", "entendimiento_curso", "carga_familiar", "nota_final"]
+    resumen = DF.groupby("perfil_academico")[cols_resumen].mean().round(2)
+    st.dataframe(resumen, use_container_width=True)
+
+    st.subheader("Situación académica dentro de cada perfil")
+    tabla_situacion = pd.crosstab(DF["perfil_academico"], DF["situacion_academica"], normalize="index") * 100
+    fig_stack = px.bar(
+        tabla_situacion, barmode="stack",
+        title="% de situación académica por perfil",
+        color_discrete_map=COLOR_SITUACION,
+        labels={"value": "% de estudiantes", "perfil_academico": "Perfil"},
+    )
+    st.plotly_chart(fig_stack, use_container_width=True)
+
+    st.subheader("Descripción de los perfiles detectados")
+    perfiles_desc = {
+        "Trabajador Esforzado": "🟢 Combina trabajo y estudio de forma equilibrada. Buena asistencia, bajo estrés relativo. Mayoría 'Aprobado'.",
+        "Riesgo por Ausentismo Laboral": "🟠 El trabajo compite fuertemente con la asistencia y el estudio. Requiere flexibilidad horaria.",
+        "Estudiante de Alto Rendimiento": "🟢 Poca o nula carga laboral, mucho tiempo de estudio. Rendimiento sobresaliente.",
+        "Vulnerable por Carga Familiar y Estres": "🔴 Trabaja, tiene dependientes económicos y estrés elevado. Perfil prioritario para apoyo institucional (becas, tutoría, salud mental).",
+        "Perfil Mixto / Regular": "🟡 No presenta un patrón extremo; comportamiento cercano al promedio general.",
+    }
+    for nombre in conteo["Perfil"]:
+        base_nombre = nombre.split(" (")[0]
+        st.markdown(f"**{nombre}**: {perfiles_desc.get(base_nombre, 'Perfil sin descripción predefinida.')}")
+
+
+# ========================================================================
+# PÁGINA 4: ÉTICA EN LA IA
+# ========================================================================
+def pagina_etica():
+    st.title("⚖️ Ética en la Inteligencia Artificial")
+
     st.markdown("""
-    **📖 Flujo para activar el sistema integrado:**
-    1. Genera el dataset nuevo (ya incluye `promedio_t1`, `promedio_t2`, `cursos_en_riesgo_notas`, `pct_creditos_riesgo`).
-    2. Entrena el modelo con esas features.
-    3. En **Predictor**, ingresa datos generales + notas T1/T2 → el modelo usa **todo junto** para predecir.
-    """)
+Este sistema fue diseñado teniendo en cuenta que **el estudiante que trabaja
+no debe ser penalizado por el hecho de trabajar**, sino evaluado por el
+**efecto real y medible** de sus circunstancias sobre su desempeño.
+""")
+
+    st.subheader("1. Mitigación de sesgos en los datos")
+    st.markdown("""
+- **No se usa "trabaja: sí/no" como variable determinante aislada.** El
+  dataset incluye un grupo de contraste de estudiantes que no trabajan,
+  precisamente para que los modelos aprendan que el problema no es trabajar
+  en sí, sino la *falta de balance* entre horas de trabajo, horas de estudio,
+  descanso y apoyo familiar.
+- **Variables de esfuerzo y contexto, no solo de resultado.** Se incorporan
+  `horas_estudio_semanal`, `entendimiento_curso`, `asistencia_pct` y
+  `carga_familiar` junto a `horas_trabajo_semanal`, de modo que un estudiante
+  que trabaja muchas horas pero mantiene buena asistencia y estudia lo
+  suficiente puede seguir siendo clasificado como "Aprobado" — así se refleja
+  en el perfil **"Trabajador Esforzado"** del módulo de clustering.
+- **Balanceo de clases (SMOTE).** La clase "Deserción" es naturalmente
+  minoritaria (~2% del dataset). Sin balanceo, un modelo perezoso podría
+  ignorarla por completo y aun así lograr alta *accuracy* general. SMOTE
+  genera ejemplos sintéticos de la clase minoritaria en el set de
+  entrenamiento para que el modelo le preste atención real, sin tocar el
+  set de prueba (evitando fuga de datos / *data leakage*).
+- **Random Forest con `class_weight="balanced"`** como capa adicional de
+  mitigación, y comparación explícita contra Regresión Logística para
+  detectar si un modelo más complejo introduce sesgos que el modelo simple
+  no tiene.
+- **Manejo de outliers sin eliminar estudiantes.** Se usa recorte por rango
+  intercuartílico (IQR) en vez de descartar filas, para no borrar del
+  dataset a los casos extremos reales (ej. alguien que trabaja 90h/semana),
+  que suelen ser justamente los estudiantes más vulnerables.
+""")
+
+    st.subheader("2. Transparencia del modelo")
+    st.markdown("""
+- En la pestaña de predicción se muestra el **razonamiento detrás de cada
+  resultado** (factores clave) y la **probabilidad** de cada clase, no solo
+  la etiqueta final.
+- Se reportan honestamente los casos en que el modelo optimizado (MLP +
+  GridSearchCV) **no** superó al modelo base en el conjunto de prueba, en
+  vez de ocultar ese resultado.
+""")
+
+    st.subheader("3. Límites del sistema")
+    st.warning("""
+**Este sistema es una herramienta de apoyo, NO un diagnóstico ni una decisión
+administrativa.** Las predicciones se basan en patrones estadísticos de un
+dataset sintético construido para fines académicos y **no deben usarse**
+para:
+- Tomar decisiones de matrícula, beca o expulsión de un estudiante real.
+- Etiquetar a una persona real sin su conocimiento y consentimiento.
+- Sustituir la evaluación de un tutor académico, psicólogo o consejero.
+
+Toda predicción de "Riesgo" o "Deserción" debe entenderse como una **señal
+de alerta temprana para ofrecer apoyo**, nunca como una sentencia.
+""")
+
+    st.subheader("4. Privacidad de los datos")
+    st.markdown("""
+El dataset utilizado es **100% sintético**, generado con `generador_datos.py`
+mediante distribuciones estadísticas y correlaciones definidas por el equipo
+desarrollador. No contiene información real de estudiantes. Si este sistema
+se adaptara a datos reales, sería indispensable anonimizar identificadores,
+obtener consentimiento informado y cumplir con la normativa de protección
+de datos personales vigente.
+""")
+
+
+# ========================================================================
+# PÁGINA 5: EXPLORACIÓN DEL DATASET
+# ========================================================================
+def pagina_dataset():
+    st.title("🗃️ Exploración del Dataset Sintético")
+
+    if DF is None:
+        st.warning("No se encontró ningún dataset. Ejecuta `generador_datos.py` o `entrenamiento.py`.")
+        return
+
+    st.markdown(f"**Filas:** {len(DF):,}  |  **Columnas:** {DF.shape[1]}")
+    st.dataframe(DF.head(50), use_container_width=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        fig_dist = px.histogram(
+            DF, x="nota_final", color="situacion_academica",
+            color_discrete_map=COLOR_SITUACION, nbins=30,
+            title="Distribución de Nota Final por Situación Académica",
+        )
+        st.plotly_chart(fig_dist, use_container_width=True)
+    with col2:
+        fig_scatter = px.scatter(
+            DF.sample(min(1500, len(DF)), random_state=42),
+            x="horas_trabajo_semanal", y="nota_final",
+            color="situacion_academica", color_discrete_map=COLOR_SITUACION,
+            title="Horas de trabajo vs. Nota Final",
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True)
+
+    st.subheader("Matriz de correlación (variables numéricas)")
+    cols_num = DF.select_dtypes(include=[np.number]).columns.tolist()
+    cols_num = [c for c in cols_num if c not in ("pca_x", "pca_y", "cluster")]
+    corr = DF[cols_num].corr()
+    fig_corr = px.imshow(corr, color_continuous_scale="RdBu_r", zmin=-1, zmax=1,
+                          title="Correlación entre variables")
+    st.plotly_chart(fig_corr, use_container_width=True)
+
+
+# ========================================================================
+# ROUTER
+# ========================================================================
+if pagina == "🔮 Predicción Individual":
+    pagina_prediccion()
+elif pagina == "📊 Comparación de Modelos":
+    pagina_comparacion()
+elif pagina == "🧩 Perfiles Académicos (Clustering)":
+    pagina_clustering()
+elif pagina == "⚖️ Ética en la IA":
+    pagina_etica()
+elif pagina == "🗃️ Exploración del Dataset":
+    pagina_dataset()

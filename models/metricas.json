@@ -1,0 +1,215 @@
+{
+  "regresion_lineal_examen_final": {
+    "r2": 0.8381002586756903,
+    "mae": 1.452596249439522,
+    "rmse": 1.8297331504022352,
+    "coeficientes": {
+      "horas_estudio_semanal": 0.9260794604930033,
+      "horas_trabajo_semanal": -1.0646344140648545,
+      "asistencia_pct": 0.41340430980905013,
+      "entendimiento_curso": 1.0654627518783797,
+      "horas_sueno": 0.3123193278676355,
+      "nivel_estres": -0.2891722024543406,
+      "carga_familiar": -0.6142676794012318,
+      "T1": 0.515460189891526,
+      "T2": 0.8575752556900693
+    }
+  },
+  "clasificacion": {
+    "logistic_regression": {
+      "accuracy": 0.8791666666666667,
+      "f1_macro": 0.7942106557664618,
+      "precision_macro": 0.751663706751537,
+      "recall_macro": 0.8741681019138686,
+      "confusion_matrix": [
+        [
+          662,
+          0,
+          71
+        ],
+        [
+          0,
+          22,
+          3
+        ],
+        [
+          48,
+          23,
+          371
+        ]
+      ]
+    },
+    "random_forest": {
+      "accuracy": 0.8891666666666667,
+      "f1_macro": 0.866383554191712,
+      "precision_macro": 0.8767260961768971,
+      "recall_macro": 0.8571613176701051,
+      "confusion_matrix": [
+        [
+          665,
+          0,
+          68
+        ],
+        [
+          0,
+          20,
+          5
+        ],
+        [
+          57,
+          3,
+          382
+        ]
+      ],
+      "feature_importance": {
+        "edad": 0.00799386946811201,
+        "ciclo": 0.008153278075575258,
+        "horas_trabajo_semanal": 0.03786284643991899,
+        "tiempo_transporte": 0.011346087207059182,
+        "carga_familiar": 0.1656763731711992,
+        "tiene_beca": 0.0013988465777382431,
+        "num_cursos_matriculados": 0.006837868983464006,
+        "horas_estudio_semanal": 0.10020932112408995,
+        "horas_sueno": 0.015140522370825065,
+        "nivel_estres": 0.2416820311806425,
+        "salud_mental_autopercibida": 0.03638873770784751,
+        "asistencia_pct": 0.03111919350520484,
+        "entendimiento_curso": 0.07928654269395836,
+        "T1": 0.09500173310803846,
+        "T2": 0.1583884278717034,
+        "modalidad_trabajo_enc": 0.0035143205146231527
+      }
+    }
+  },
+  "red_neuronal": {
+    "mlp_base": {
+      "accuracy": 0.8658333333333333,
+      "f1_macro": 0.7956053334859093
+    },
+    "mlp_optimizado_gridsearch": {
+      "accuracy": 0.8641666666666666,
+      "f1_macro": 0.7439417268691321,
+      "cv_best_score_f1_macro": 0.9372469696216916,
+      "mejores_hiperparametros": {
+        "activation": "tanh",
+        "alpha": 0.01,
+        "hidden_layer_sizes": [
+          64,
+          32,
+          16
+        ],
+        "learning_rate_init": 0.005
+      }
+    },
+    "modelo_final_seleccionado": "base",
+    "metricas_modelo_final": {
+      "accuracy": 0.8658333333333333,
+      "f1_macro": 0.7956053334859093,
+      "confusion_matrix": [
+        [
+          658,
+          0,
+          75
+        ],
+        [
+          1,
+          15,
+          9
+        ],
+        [
+          71,
+          5,
+          366
+        ]
+      ]
+    }
+  },
+  "clusters": {
+    "etiquetas": {
+      "0": "Vulnerable por Carga Familiar y Estres",
+      "1": "Trabajador Esforzado",
+      "2": "Estudiante de Alto Rendimiento",
+      "3": "Riesgo por Ausentismo Laboral"
+    },
+    "resumen_medias": {
+      "horas_trabajo_semanal": {
+        "0": 30.795334434351776,
+        "1": 27.443536024527337,
+        "2": 1.702698535080956,
+        "3": 34.81895765472313
+      },
+      "horas_estudio_semanal": {
+        "0": 8.198100743187448,
+        "1": 14.238323965252938,
+        "2": 20.61626831148805,
+        "3": 8.316612377850163
+      },
+      "asistencia_pct": {
+        "0": 78.30493393889347,
+        "1": 82.04793050587634,
+        "2": 91.86060138781804,
+        "3": 74.45505700325732
+      },
+      "nivel_estres": {
+        "0": 7.4299752270850545,
+        "1": 4.8035769034236075,
+        "2": 2.6292983808789514,
+        "3": 6.437524429967427
+      },
+      "entendimiento_curso": {
+        "0": 5.519075144508671,
+        "1": 7.06709248850281,
+        "2": 7.771010023130301,
+        "3": 5.213550488599348
+      },
+      "carga_familiar": {
+        "0": 2.7745664739884393,
+        "1": 0.4741951967296883,
+        "2": 0.9830377794911334,
+        "3": 0.43127035830618893
+      }
+    }
+  },
+  "clases_situacion": [
+    "Aprobado",
+    "Desercion",
+    "Riesgo"
+  ],
+  "features_regresion_examen": [
+    "horas_estudio_semanal",
+    "horas_trabajo_semanal",
+    "asistencia_pct",
+    "entendimiento_curso",
+    "horas_sueno",
+    "nivel_estres",
+    "carga_familiar",
+    "T1",
+    "T2"
+  ],
+  "features_clasificacion": [
+    "edad",
+    "ciclo",
+    "horas_trabajo_semanal",
+    "tiempo_transporte",
+    "carga_familiar",
+    "tiene_beca",
+    "num_cursos_matriculados",
+    "horas_estudio_semanal",
+    "horas_sueno",
+    "nivel_estres",
+    "salud_mental_autopercibida",
+    "asistencia_pct",
+    "entendimiento_curso",
+    "T1",
+    "T2",
+    "modalidad_trabajo_enc"
+  ],
+  "features_clustering": [
+    "horas_trabajo_semanal",
+    "horas_estudio_semanal",
+    "asistencia_pct",
+    "nivel_estres",
+    "entendimiento_curso",
+    "carga_familiar"
+  ]
+}
